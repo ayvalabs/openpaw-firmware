@@ -1,0 +1,76 @@
+name: firmware-release
+
+# Tagging vX.Y.Z publishes the OTA update:
+# builds one .bin per board, generates manifest.json, attaches all to a GitHub Release.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        board: [esp32_ball_v1, hw_v2, openpaw]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build firmware (${{ matrix.board }})
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: release-v5.3
+          target: esp32
+          command: idf.py -DOPENPAW_BOARD=${{ matrix.board }} build
+
+      - name: Stage artifact
+        run: |
+          mkdir -p dist
+          VER="${GITHUB_REF_NAME}"
+          BIN="dist/openpaw-fw-${VER}-${{ matrix.board }}.bin"
+          cp build/openpaw.bin "$BIN"
+          echo "SHA256=$(sha256sum "$BIN" | cut -d' ' -f1)" >> "$GITHUB_ENV"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fw-${{ matrix.board }}
+          path: dist/*.bin
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { path: dist, merge-multiple: true }
+
+      - name: Generate manifest.json
+        run: |
+          VER="${GITHUB_REF_NAME#v}"
+          REPO="${GITHUB_REPOSITORY}"
+          echo '{' > manifest.json
+          echo "  \"channel\": \"stable\"," >> manifest.json
+          echo "  \"generated_at\": \"$(date -u +%FT%TZ)\"," >> manifest.json
+          echo '  "boards": {' >> manifest.json
+          first=1
+          for bin in dist/*.bin; do
+            name=$(basename "$bin"); board=$(echo "$name" | sed -E 's/.*-([a-z0-9_]+)\.bin/\1/')
+            sha=$(sha256sum "$bin" | cut -d' ' -f1); size=$(stat -c%s "$bin")
+            url="https://github.com/${REPO}/releases/download/${GITHUB_REF_NAME}/${name}"
+            [ $first -eq 0 ] && echo ',' >> manifest.json; first=0
+            printf '    "%s": {"version": "%s", "url": "%s", "sha256": "%s", "size": %s}' \
+              "$board" "$VER" "$url" "$sha" "$size" >> manifest.json
+          done
+          echo '' >> manifest.json; echo '  }' >> manifest.json; echo '}' >> manifest.json
+          cat manifest.json
+
+      - name: Publish Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*.bin
+            manifest.json
+          generate_release_notes: true
