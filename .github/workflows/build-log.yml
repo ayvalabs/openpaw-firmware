@@ -14,7 +14,7 @@ name: build-log
 #   TELEGRAM_BOT_TOKEN         (channel A, optional)
 #   TELEGRAM_CHAT_ID           (channel A, optional)
 #   MARKETING_DISPATCH_TOKEN   (channel B — a PAT with `repo` scope that can
-#                               dispatch to aeropriest/openpaw-marketing)
+#                               dispatch to ayvalabs/openpaw-marketing)
 # Any missing secret is skipped gracefully.
 
 on:
@@ -90,7 +90,7 @@ jobs:
         uses: peter-evans/repository-dispatch@v3
         with:
           token: ${{ secrets.MARKETING_DISPATCH_TOKEN }}
-          repository: aeropriest/openpaw-marketing
+          repository: ayvalabs/openpaw-marketing
           event-type: devlog
           client-payload: |
             {
