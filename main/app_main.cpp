@@ -10,8 +10,10 @@
 #include "nvs_flash.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "VL53L0X.h"
 
 static const char *TAG = "camera_web";
+static volatile uint16_t g_distance_mm = 0;
 
 /* Seeed Studio XIAO ESP32S3 Sense camera pins */
 #define PWDN_GPIO_NUM     -1
@@ -275,6 +277,33 @@ static void start_webserver(void)
 
     ESP_LOGI(TAG, "Web server started");
 }
+static void vl53_task(void *pv)
+{
+    VL53L0X vl(I2C_NUM_0);
+
+
+    vl.i2cMasterInit(GPIO_NUM_5, GPIO_NUM_6);
+
+    if (!vl.init()) {
+        ESP_LOGE(TAG, "Failed to initialize VL53L0X");
+        vTaskDelete(NULL);
+        return;
+    }
+
+    ESP_LOGI(TAG, "VL53L0X initialized successfully");
+
+    while (true) {
+        uint16_t distance = 0;
+
+        if (vl.read(&distance)) {
+            g_distance_mm = distance;
+            ESP_LOGI(TAG, "Distance: %u mm", distance);
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+}
+
 
 extern "C" void app_main(void)
 {
@@ -289,4 +318,12 @@ extern "C" void app_main(void)
     start_camera();
     start_wifi_ap();
     start_webserver();
+    xTaskCreate(
+    vl53_task,
+    "vl53",
+    8192,
+    NULL,
+    5,
+    NULL
+);
 }
