@@ -215,16 +215,15 @@ static void start_wifi_ap(void)
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
     ESP_ERROR_CHECK(esp_wifi_init(&cfg));
 
-    wifi_config_t wifi_config = {
-        .ap = {
-            .ssid = WIFI_SSID,
-            .ssid_len = strlen(WIFI_SSID),
-            .password = WIFI_PASS,
-            .max_connection = 4,
-            .authmode = WIFI_AUTH_WPA_WPA2_PSK,
-            .channel = 1,
-        },
-    };
+    wifi_config_t wifi_config = {};
+
+strcpy((char *)wifi_config.ap.ssid, WIFI_SSID);
+strcpy((char *)wifi_config.ap.password, WIFI_PASS);
+
+wifi_config.ap.ssid_len = strlen(WIFI_SSID);
+wifi_config.ap.channel = 1;
+wifi_config.ap.max_connection = 4;
+wifi_config.ap.authmode = WIFI_AUTH_WPA_WPA2_PSK;
 
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_AP));
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &wifi_config));
@@ -277,9 +276,10 @@ static void start_webserver(void)
     ESP_LOGI(TAG, "Web server started");
 }
 
-void app_main(void)
+extern "C" void app_main(void)
 {
     esp_err_t ota_valid_err = esp_ota_mark_app_valid_cancel_rollback();
+
     if (ota_valid_err == ESP_OK) {
         ESP_LOGI(TAG, "OTA app marked valid");
     } else if (ota_valid_err != ESP_ERR_NOT_FOUND) {
