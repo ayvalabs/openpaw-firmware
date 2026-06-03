@@ -10,8 +10,10 @@
 #include "nvs_flash.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "VL53L0X.h"
 
 static const char *TAG = "camera_web";
+static volatile uint16_t g_distance_mm = 0;
 
 /* Seeed Studio XIAO ESP32S3 Sense camera pins */
 #define PWDN_GPIO_NUM     -1
@@ -215,16 +217,15 @@ static void start_wifi_ap(void)
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
     ESP_ERROR_CHECK(esp_wifi_init(&cfg));
 
-    wifi_config_t wifi_config = {
-        .ap = {
-            .ssid = WIFI_SSID,
-            .ssid_len = strlen(WIFI_SSID),
-            .password = WIFI_PASS,
-            .max_connection = 4,
-            .authmode = WIFI_AUTH_WPA_WPA2_PSK,
-            .channel = 1,
-        },
-    };
+    wifi_config_t wifi_config = {};
+
+strcpy((char *)wifi_config.ap.ssid, WIFI_SSID);
+strcpy((char *)wifi_config.ap.password, WIFI_PASS);
+
+wifi_config.ap.ssid_len = strlen(WIFI_SSID);
+wifi_config.ap.channel = 1;
+wifi_config.ap.max_connection = 4;
+wifi_config.ap.authmode = WIFI_AUTH_WPA_WPA2_PSK;
 
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_AP));
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &wifi_config));
@@ -276,10 +277,36 @@ static void start_webserver(void)
 
     ESP_LOGI(TAG, "Web server started");
 }
+static void vl53_task(void *pv)
+{
+    VL53L0X vl(I2C_NUM_0);
 
-void app_main(void)
+    vl.i2cMasterInit(GPIO_NUM_5, GPIO_NUM_6);
+
+    if (!vl.init()) {
+        ESP_LOGE(TAG, "Failed to initialize VL53L0X");
+        vTaskDelete(NULL);
+        return;
+    }
+
+    ESP_LOGI(TAG, "VL53L0X initialized successfully");
+
+    while (true) {
+        uint16_t distance = 0;
+
+        if (vl.read(&distance)) {
+            g_distance_mm = distance;
+            ESP_LOGI(TAG, "Distance: %u mm", distance);
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+}
+
+extern "C" void app_main(void)
 {
     esp_err_t ota_valid_err = esp_ota_mark_app_valid_cancel_rollback();
+
     if (ota_valid_err == ESP_OK) {
         ESP_LOGI(TAG, "OTA app marked valid");
     } else if (ota_valid_err != ESP_ERR_NOT_FOUND) {
@@ -289,4 +316,12 @@ void app_main(void)
     start_camera();
     start_wifi_ap();
     start_webserver();
+    xTaskCreate(
+    vl53_task,
+    "vl53",
+    8192,
+    NULL,
+    5,
+    NULL
+);
 }
